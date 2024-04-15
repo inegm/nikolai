@@ -2,118 +2,43 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
-	"github.com/inegm/nikolai/manager"
-	"github.com/inegm/nikolai/node"
 	"github.com/inegm/nikolai/task"
 	"github.com/inegm/nikolai/worker"
 )
 
 func main() {
-	t := task.Task{
-		ID:     uuid.New(),
-		Name:   "Task-1",
-		State:  task.Pending,
-		Image:  "Image-1",
-		Memory: 1024,
-		Disk:   1,
-	}
-	te := task.TaskEvent{
-		ID:        uuid.New(),
-		State:     task.Pending,
-		Timestamp: time.Now().UTC(),
-		Task:      t,
-	}
-	fmt.Printf("task: %v\n", t)
-	fmt.Printf("task event: %v\n", te)
-
+	db := make(map[uuid.UUID]*task.Task)
 	w := worker.Worker{
-		Name:  "Worker-1",
 		Queue: *queue.New(),
-		Db:    make(map[uuid.UUID]*task.Task),
+		DB:    db,
 	}
-	fmt.Printf("worker: %v\n", w)
-	w.CollectStats()
-	w.RunTask()
-	w.StartTask()
-	w.StopTask()
-
-	m := manager.Manager{
-		Pending: *queue.New(),
-		TaskDb:  make(map[string][]*task.Task),
-		EventDb: make(map[string][]*task.TaskEvent),
-		Workers: []string{w.Name},
-	}
-	fmt.Printf("manager: %v\n", m)
-	m.SelectWorker()
-	m.UpdateTasks()
-	m.SendWork()
-
-	n := node.Node{
-		Name:   "Node-1",
-		Ip:     "192.168.1.1",
-		Cores:  4,
-		Memory: 1024,
-		Disk:   25,
-		Role:   "Worker",
-	}
-	fmt.Printf("node: %v\n", n)
-
-	fmt.Println("creating a test container")
-	task, res := createContainer()
-	if res.Error != nil {
-		fmt.Printf("%v", res.Error)
-		os.Exit(1)
-	}
-	time.Sleep(time.Second * 5)
-	fmt.Printf("stopping container %s\n", res.ContainerId)
-	res = stopContainer(task, res.ContainerId)
-	if res.Error != nil {
-		fmt.Printf("%v\n", res.Error)
-		os.Exit(1)
-	}
-}
-
-func createContainer() (*task.Docker, *task.DockerResult) {
-	c := task.Config{
+	t := task.Task{
+		ID:    uuid.New(),
 		Name:  "test-container-1",
-		Image: "postgres:13",
-		Env: []string{
-			"POSTGRES_USER=cube",
-			"POSTGRES_PASSWORD=secret",
-		},
-	}
-	dc, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		fmt.Printf("Error creating Docker client: %v\n", err)
-		return nil, nil
-	}
-	d := task.Docker{
-		Client: dc,
-		Config: c,
+		State: task.Scheduled,
+		Image: "strm/helloworld-http",
 	}
 
-	result := d.Run()
+	fmt.Printf("starting task %s\n", t.ID)
+	w.AddTask(t)
+	result := w.RunTask()
 	if result.Error != nil {
-		fmt.Printf("%v\n", result.Error)
-		return nil, nil
+		panic(result.Error)
 	}
+	t.ContainerID = result.ContainerID
+	fmt.Printf("task %s is running in container %s\n", t.ID, t.ContainerID)
+	fmt.Println("zzzzzz...")
+	time.Sleep(time.Second * 3)
 
-	fmt.Printf("Container %s is running with config %v\n", result.ContainerId, c)
-	return &d, &result
-}
-
-func stopContainer(d *task.Docker, id string) *task.DockerResult {
-	result := d.Stop(id)
+	fmt.Printf("stopping task %s\n", t.ID)
+	t.State = task.Completed
+	w.AddTask(t)
+	result = w.RunTask()
 	if result.Error != nil {
-		fmt.Printf("HERE %v\n", result.Error)
-		return &result
+		panic(result.Error)
 	}
-	fmt.Printf("Container %s has been stopped and removed\n", result.ContainerId)
-	return &result
 }
